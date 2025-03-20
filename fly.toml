@@ -21,3 +21,11 @@ primary_region = 'cdg'
   cpu_kind = 'shared'
   cpus = 1
   memory_mb = 1024
+
+[[services.http_checks]]
+interval = "4m" #vérifie toutes les 4 minutes
+grace_period = "10s"
+method = "GET"
+path = "/"
+protocol = "https"
+timeout = "2s"
