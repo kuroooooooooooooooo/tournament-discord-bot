@@ -1,9 +1,9 @@
-# fly.toml app configuration file generated for tournament-discord-bot on 2025-03-20T00:59:41Z
+# fly.toml app configuration file generated for rotombot on 2025-03-20T02:27:52Z
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'tournament-discord-bot'
+app = 'rotombot'
 primary_region = 'cdg'
 
 [build]
