@@ -186,7 +186,7 @@ process.on("SIGTERM", () => {
 // Log every 4 minutes to show the bot is running
 setInterval(() => {
 	console.log("✅ Bot is still running...");
-}, 4 * 60 * 1000) // Log Every 4 minutes
+}, 6000) // every 60 sec
 
 // ✅ Connect the bot
 client.login(process.env.TOKEN);
