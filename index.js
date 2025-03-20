@@ -35,7 +35,10 @@ client.on('messageCreate', async (message) => {
 
         const dateStr = args[1];
         const timeStr = args[2];
-        tournamentStartTime = new Date(`${dateStr}T${timeStr}:00`);
+        const [day, month, year] = dateStr.split("-").map(Number);
+		const [hour, minute] = timeStr.split(":").map(Number);
+
+tournamentStartTime = new Date(year, month - 1, day, hour, minute);
 
         if (isNaN(tournamentStartTime)) {
             message.channel.send("⚠️ Invalid date format. Use `DD-MM-YYYY HH:MM`.");
