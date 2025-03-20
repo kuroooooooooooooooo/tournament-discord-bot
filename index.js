@@ -162,16 +162,13 @@ function scheduleTournamentStart() {
         }, timeUntilStart);
     }
 }
-const express = require('express');
+const express = require("express");
 const app = express();
+
 const PORT = process.env.PORT || 3000;
+app.get("/", (req, res) => res.send("Bot is running"));
 
-app.get('/', (req, res) => {
-    res.send('Bot is running and managed by Fly.io!');
-});
+app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Web server running on port ${PORT}`));
 
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(🚀 Keep-alive server running on port ${PORT});
-});
 // ✅ Connect the bot
 client.login(process.env.TOKEN);
