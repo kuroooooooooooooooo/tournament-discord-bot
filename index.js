@@ -170,5 +170,23 @@ app.get("/", (req, res) => res.send("Bot is running"));
 
 app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Web server running on port ${PORT}`));
 
+// Keep the process alive to prevent Fly.io from shutting it down
+process.stdub.resume();
+
+process.on("SIGINT", () => {
+	console.log("Bot is shutting down...");
+	process.exit(0);
+});
+
+process.on("SIGTERM", () => {
+	console.log("Bot is shutting down due to Fly.io stop command...");
+	process.exit(0);
+});
+
+// Log every 5 minutes to show the bot is running
+setInterval(() => {
+	console.log("✅ Bot is still running...");
+}, 5 * 60 * 1000) // Every 5 minutes
+
 // ✅ Connect the bot
 client.login(process.env.TOKEN);
