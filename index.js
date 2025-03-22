@@ -1,7 +1,6 @@
-require('dotenv').config(); // Load environment variables
-console.log("Token loaded:", process.env.TOKEN); // Token verification
-
-const { Client, GatewayIntentBits, MessageEmbed } = require('discord.js');
+require('dotenv').config();
+console.log("Token chargé :", process.env.TOKEN); // Vérification du token
+const { Client, GatewayIntentBits, EmbedBuilder, Colors, Partials, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 const client = new Client({ 
     intents: [
@@ -10,15 +9,23 @@ const client = new Client({
         GatewayIntentBits.MessageContent, 
         GatewayIntentBits.GuildMessageReactions, // Required for tracking reaction
 		GatewayIntentBits.GuildMembers // Required to get user info in reactions
-    ] 
+    ],
+	partials: [
+        Partials.Message,
+		Partials.Channel,
+		Partials.reaction
+	]
+	
 });
 
-const tournamentChannelId = "1337487554056028270"; // Replace with the channel ID
-const participants = []; // liste des participants
-let registrationMessageId; // declare globally
-let pools = [];
+let registrationMessageId= null;
+let participants  = [];
+let players = [];
+let bracket = [];
+let tournamentStarTime = null;
 let currentRound = 1;
-let tournamentStartTime = null; // Dynamic start time
+let playersNumbers = {};
+const tournamentChannelId = "1337487554056028270";
 
 client.once('ready', () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
@@ -47,95 +54,206 @@ client.on("messageCreate", async (message) => {
             return;
         }
 
-            //  Use original UTC formatting
+            // Use original UTC formatting
         const formattedTime = tournamentStartTime.toUTCString();
 
         try {
-            //  Send confirmation message
+            // Send confirmation message
             const confirmationMessage = await message.channel.send(`✅ Tournament scheduled for **${formattedTime} (UTC)**.`);
+			const reactionMessage = await message.channel.send(`Register by reacting to the Pokeball.`);
+			registrationMessageId = reactionMessage.id; // Stock message ID
+			console.log("📌 Stored Registration Message ID:", registrationMessageId);
 
-            //  Correctly store message ID (if needed)
-            const confirmationMessageid = confirmationMessage.id;
-
-            //  Add the custom emoji reaction (apply react() to the Message object, not its ID)
-            await confirmationMessage.react("<:CoinHead:1351413590120464456>");
-            console.log("✅Added CoinHead reaction!");
-
-            //  Proceed with scheduling the tournament
-            scheduleTournamentStart();
-        } catch (error) {
-            console.error(" Error scheduling tournament:", error);
-        }
-    }
+            // Proceed with scheduling the tournament
+			setTimeout(async () => {
+				try {
+					await reactionMessage.react("<:CoinHead:1351413590120464456 >")
+					console.log("✅ Added CoinHead reaction!")
+				} catch (emojiError) {
+					console.error("❌ Failed to add CoinHead reaction:", emojiError);
+				}
+			}, 500);
+			
+			// ✅ Schedule the tournament
+			scheduleTournamentStart();
+		} catch (error) {
+			console.error("❌ Error scheduling tournament:", error);
+		}
+	}
 });
 
 // ✅ Handle participant registration via reactions
 client.on('messageReactionAdd', async (reaction, user) => {
     if (user.bot) return; // Ignore bot reactions
-	
-	console.log(`🔹Current Participants List:`, participants);
-	console.log(`✅Successfully registered: ${user.username} (ID: {user.id})`);
-	if (!registrationMessageId) {
-		console.error("⚠️ Error: registrationMessageId is undefined!");
-		return;
-	}
-	// Check if reaction is on the correct message and emoji	
-	if (reaction.message.channel.id === TournamentChannelId && reaction.message.id === registrationMessageId) {
-		if (reaction.emoji.id === "1351413590120464456") { // Check for Coinhead reaction
-		    if (!participants.includes(user.id)) {
-		        participants.push(user.id); // Add user ID to list
-                console.log(`✅ successfully registered: ${user.tag} (ID: ${user.id}) for the tournament`);
-		    } else {
-				console.log(`⚠️ ${user.username} is already registered.`);
-				console.log("📃 Current Participants List:", participants);				
-			}
-		}
-	}
-});   
 
-// 🔄 Handle participant unregistration if they remove their reaction
-client.on('messageReactionRemove', async (reaction, user) => {
-	if (user.bot) return; // Ignore bot reactions
-	
-	console.log(`🔄Unregistered: ${user.username} (ID: {user.id})`);
-	console.log(`✅Updated Participants List:`, participants);
-	
-	if (reaction.message.id !== registrationMessageId) return; // Check for the correct message
-	if (reaction.emoji.id !== "1351413590120464456") return; // Check for the correct emoji
-	// Find and remove participants of the list
-	const index = participants.indexOf(user.id);
-		if (index !== -1) {
-			participants.splice(index, 1);
-			console.log(`🔄${user.username} (ID: ${user.id}) has unregistred.`);
-		console.log("📃 Current Participants List:", participants);
-	}
-});
- 
-// Debugging command: Print current participants list
-client.on('messageCreate', async (message) => {
-    if (message.content === "!participants") {
-        if (participants.length === 0) {
-            message.channel.send(`🚫 No participants registered yet.`);
-        } else {
-            message.channel.send(`✅ Current Participants: ${participants.map(id => `<@${id}>`).join(", ")}`);
-		}
-	}
-});
+    console.log(`✅ Reaction detected: ${reaction.emoji.name} (ID: ${reaction.emoji.id}) by ${user.tag}`);
 
-// 🔹 Command to manually start the tournament
-client.on('messageCreate', async (message) => {
-    if (message.content === "!startTournament" && message.channel.id === tournamentChannelId) {
-		// 🟢 Debugging: Log all registered participants
-        console.log("🔹 Current Registered Participants:", participants);
-		
-        if (participants.length < 2) {
-            message.channel.send("⚠️ Not enough participants to start the tournament!");
+    if (reaction.message.partial) {
+        try {
+            await reaction.message.fetch();
+            console.log('✅ Message successfully fetched');
+        } catch (error) {
+            console.error('❌ Error fetching message:', error);
             return;
         }
+    }
 
-        shuffleParticipants();
-        createPools();
-        displayTournament(message.channel);
+    console.log(`📌 Checking message ID: ${reaction.message.id}, expected: ${registrationMessageId}`);
+
+    if (reaction.message.id !== registrationMessageId) {
+        console.log('⚠️ Ignoring reaction: Message ID does not match');
+        return;
+    }
+
+    console.log(`📌 Checking emoji ID: ${reaction.emoji.id}, expected: "1351413590120464456"`);
+
+    if (reaction.emoji.id !== "1351413590120464456") {
+        console.log('⚠️ Ignoring reaction: Emoji does not match');
+        return;
+    }
+
+    console.log('✅ Reaction passed all checks, adding user to participants');
+
+    if (!participants.includes(user.id)) {
+        participants.push(user.id);
+        console.log(`✅ Successfully registered: ${user.username} (ID: ${user.id})`);
+    } else {
+        console.log(`⚠️ ${user.username} is already registered`);
+    }
+
+    console.log("📜 Current Participants List:", participants);
+});
+				
+//  Handle participant unregistration if they remove their reaction
+client.on('messageReactionRemove', async (reaction, user) => {
+    if (user.bot) return; // Ignore bot reactions
+
+    console.log(`🔄 Reaction removed: ${reaction.emoji.name} (ID: ${reaction.emoji.id}) by ${user.tag}`);
+
+    // Fetch the message if it's partial
+    if (reaction.message.partial) {
+        try {
+            await reaction.message.fetch();
+            console.log('✅ Message successfully fetched for removal check.');
+        } catch (error) {
+            console.error('❌ Error fetching message:', error);
+            return;
+        }
+    }
+
+    console.log(`📌 Checking message ID: ${reaction.message.id}, expected: ${registrationMessageId}`);
+
+    if (reaction.message.id !== registrationMessageId) {
+        console.log('⚠️ Ignoring reaction removal: Message ID does not match.');
+        return;
+    }
+
+    console.log(`📌 Checking emoji ID: ${reaction.emoji.id}, expected: "1351413590120464456"`);
+
+    if (reaction.emoji.id !== "1351413590120464456") {
+        console.log('⚠️ Ignoring reaction removal: Emoji does not match.');
+        return;
+    }
+
+    console.log('✅ Reaction removal passed all checks, removing user from participants.');
+
+    // Find and remove the participant
+    const index = participants.indexOf(user.id);
+    if (index !== -1) {
+        participants.splice(index, 1);
+        console.log(`🔄 Unregistered: ${user.username} (ID: ${user.id})`);
+        console.log("📜 Updated Participants List:", participants);
+    } else {
+        console.log("⚠️ User was not in the list!");
+    }
+});
+
+//  Debugging command: Print current Participants list
+client.on('messageCreate', async (message) => {
+    if (message.content === "!Participants") {
+        if (participants.length === 0) { //  Fixed variable name
+            message.channel.send("❌ No participants registered yet.");
+        } else {
+            message.channel.send(`✅ Current participants: ${participants.map(id => `<@${id}>)`).join(", ")}`);
+        }
+    }
+});
+
+// Function to shuffle an array using Fisher-Yates algorithm
+function shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]]; // Swap elements
+    }
+}
+
+// 🔹 Create tournament brackets
+function createTournamentBracket(players) {
+	let bracket = []
+	playerNumbers = {}; // Store number emojis for each player
+	let availableNumbers = Array.from({ length: players.length }, (_, i) => (i  +  1).toString()); //["1","2","3",...]
+	shuffleArray(availableNumbers); //shuffle number randomly
+	
+    // Assign a unique number emoji to each player
+    players.forEach((player, index) => {
+        playerNumbers[player] = availableNumbers[index]; // Player 1 = randomnumber Player 2 = randomnumber  etc.
+    });
+
+    // Pair players for first round
+    for (let i = 0; i < players.length; i += 2) {
+        if (i + 1 < players.length) {
+            bracket.push([players[i], players[i + 1]]);
+        } else {
+            // If odd number of players, last player gets an auto-win
+            bracket.push([players[i], "AUTO_WIN"]);
+        }
+    }
+
+    return bracket;
+}
+
+//🔹 Tournament structure creation
+function startTournament(channel) {
+    console.log("🏆 Tournament is starting!");
+
+    if (participants.length < 2) {
+        console.log("❌ Not enough participants to start the tournament.");
+        return;
+    }
+    players = [...participants]; // Copy participants into players list
+    bracket = createTournamentBracket(players);  // Create 1v1 bracket
+    displayTournament(channel, bracket);  // Show tournament matches
+
+    console.log("✅ Tournament has started!");
+}
+
+// 🔹 Schedule automatic tournament start
+function scheduleTournamentStart() {
+    if (!tournamentStartTime) return;
+
+    const currentTime = new Date();
+    const timeUntilStart = tournamentStartTime - currentTime;
+
+    if (timeUntilStart <= 0) {
+        // If time has passed, start immediately
+        console.log('Scheduled tournament time reached, starting now...');
+        startTournament(client.channels.cache.get(tournamentChannelId));
+    } else {
+        // Otherwise, schedule the start
+        console.log(`The tournament will start at ${tournamentStartTime.toLocaleString()}.`);
+        setTimeout(() => {
+            console.log('Scheduled tournament time reached, starting now...');
+            startTournament(client.channels.cache.get(tournamentChannelId));
+        }, timeUntilStart);
+    }
+}
+
+//  Command to manually start the tournament
+client.on('messageCreate', async (message) => {
+    if (message.content === "!startTournament" && message.channel.id === tournamentChannelId) {
+        // ✅ Debugging: Log all registered Participants
+        console.log("🔹Current Registered Participants:", participants);
+		startTournament(message.channel);
     }
 });
 
@@ -149,7 +267,7 @@ client.on('messageCreate', async (message) => {
 
         // Reset everything
         participants.length = 0;
-        pools = [];
+        bracket = [];
         currentRound = 1;
         tournamentStartTime = null;
 
@@ -158,61 +276,59 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-// 🔹 Shuffle participants
-function shuffleParticipants() {
-    for (let i = participants.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [participants[i], participants[j]] = [participants[j], participants[i]];
-    }
-}
-
-// 🔹 Create 1v1 pools
-function createPools() {
-    pools = [];
-    for (let i = 0; i < participants.length; i += 2) {
-        if (i + 1 < participants.length) {
-            pools.push([participants[i], participants[i + 1]]);
-        } else {
-            pools.push([participants[i], "AUTO_WIN"]); // If odd number, one player auto wins
-        }
-    }
-}
-
-// 🔹 Display tournament brackets
-async function displayTournament(channel) {
-    let embed = new MessageEmbed()
-        .setTitle(`🏆 Tournament - Round ${currentRound}`)
-        .setColor("BLUE");
-
-    pools.forEach((match, index) => {
-        const player1 = `<@${match[0]}>`;
-        const player2 = match[1] === "AUTO_WIN" ? "✅ Auto Win" : `<@${match[1]}>`;
-        embed.addField(`Match ${index + 1}`, `${player1} vs ${player2}`, false);
-    });
-
-    const tournamentMessage = await channel.send({ embeds: [embed] });
-
-    for (let i = 0; i < pools.length; i++) {
-        if (pools[i][1] !== "AUTO_WIN") {
-            await tournamentMessage.react(`${i + 1}️⃣`);
-        }
-    }
-
-    client.on('messageReactionAdd', async (reaction, user) => {
-        if (user.bot) return;
-
-        const matchIndex = parseInt(reaction.emoji.name[0]) - 1;
-        if (!isNaN(matchIndex) && pools[matchIndex]) {
-            advanceToNextRound(pools[matchIndex][0]); // First player advances
-            checkNextRound(channel);
-        }
-    });
-}
-
 // 🔹 Advance to the next round
-function advanceToNextRound(winnerId) {
-    participants.push(winnerId);
-}
+client.on("messageReactionAdd", async (reaction, user) => {
+    if (user.bot) return; // Ignore bot reactions
+
+    let matchIndex = bracket.findIndex(match => match.includes(user.id));
+    if (matchIndex === -1) return; // Player not in a match
+
+    let match = bracket[matchIndex];
+    let winner = user.id;
+    let loser = match.find(p => p !== winner);
+
+    // Validate if the reaction matches the player's assigned number
+    if (reaction.emoji.name !== playerNumbers[winner].toString()) return; // Ignore wrong reactions
+
+    console.log(`🏆 Match ${matchIndex + 1} winner: <@${winner}>`);
+
+    // Move winner to the next round bracket
+    nextBracket.push(winner);
+
+    // Remove the loser from active tournament
+    players = players.filter(id => id !== loser);
+    delete playerNumbers[loser]; // Remove their assigned number
+
+    // Increment the number of completed matches
+    completedMatches++;
+
+    console.log(`✅ Match ${matchIndex + 1} completed. ${completedMatches}/${currentRoundMatches} matches finished.`);
+
+    // Check if all matches in the round are completed
+    if (completedMatches >= currentRoundMatches) {
+        console.log("✅ All matches completed! Advancing to next round...");
+        completedMatches = 0; // Reset for the next round
+        currentRoundMatches = Math.floor(nextBracket.length / 2); // Update match count for next round
+
+        // If only one player remains, declare the winner
+        if (nextBracket.length === 1) {
+            reaction.message.channel.send(`🏆 **Congratulations to <@${nextBracket[0]}>! Champion of the tournament!** 🎉`);
+            return;
+        }
+
+        // Create new matchups and update the tournament bracket
+        bracket = [];
+        for (let i = 0; i < nextBracket.length; i += 2) {
+            if (i + 1 < nextBracket.length) {
+                bracket.push([nextBracket[i], nextBracket[i + 1]]);
+            } else {
+                bracket.push([nextBracket[i], "AUTO_WIN"]);
+            }
+        }
+        nextBracket = []; // Clear nextBracket for the next round
+        displayTournament(reaction.message.channel, bracket); // Update bracket display
+    }
+});
 
 // 🔹 Check for tournament completion
 function checkNextRound(channel) {
@@ -223,30 +339,98 @@ function checkNextRound(channel) {
     }
 
     currentRound++;
-    createPools();
+    createTournamentBracket(channel);
     displayTournament(channel);
 }
 
-// 🔹 Schedule automatic tournament start
-function scheduleTournamentStart() {
-    if (!tournamentStartTime) return;
+// 🔹 Display tournament brackets
+async function displayTournament(channel, bracket) {
+	let embed = new EmbedBuilder()
+		.setTitle("Tournament Bracket")
+		.setColor("#3498db");
+	bracket.forEach((match, index) => {
+        let player1 = `(${playerNumbers[match[0]]}) <@${match[0]}>`;
+        let player2 = match[1] === "AUTO_WIN" 
+            ? " Auto Win" 
+            : `(${playerNumbers[match[1]]}) <@${match[1]}>`;
 
-    const currentTime = new Date();
-    const timeUntilStart = tournamentStartTime - currentTime;
+        embed.addFields({
+            name: `Match ${index + 1}`,
+            value: `${player1} vs ${player2}`,
+            inline: false
+        });
+	});
+	
+	// Create buttons for each match
+  const matchButtons = bracket.map((match) => {
+    return new ActionRowBuilder().addComponents(
+      ...match.map((playerId) =>
+        new ButtonBuilder()
+          .setCustomId(`win_${playerId}`)
+          .setLabel(`${playerNumbers[playerId]}`)
+          .setStyle(ButtonStyle.Primary)
+		)
+	)	
+});	
+   
+  // Send the tournament embed with buttons
+  const tournamentMessage = await channel.send({
+        embeds: [embed],
+        components: matchButtons
+    });
+	
+    return tournamentMessage;
+  }
 
-    if (timeUntilStart <= 0) {
-        // If time has passed, start immediately
-        console.log('Scheduled tournament time reached, starting now...');
-        startTournament();
-    } else {
-        // Otherwise, schedule the start
-        console.log(`The tournament will start at ${tournamentStartTime.toLocaleString()}.`);
-        setTimeout(() => {
-            console.log('Scheduled tournament time reached, starting now...');
-            startTournament();
-        }, timeUntilStart);
-    }
-}
+client.on('interactionCreate', async interaction => {
+	try {
+		if (!interaction.isButton()) return;
+		
+		const winnerId = interaction.customId.replace('win_', '');
+		const userId = interaction.user.id;
+		
+		// refused if reaction doesn't comme from corresponding player
+		if (userId !== winnerId) {
+			await interaction.reply({
+				content: `You cannot click there MOFO.`,
+				flags: 64 // équivalent de ephemeral: true
+			});
+			return;
+		}
+		// Vérifie si le joueur est bien dans un match du round actuel
+		let matchIndex = bracket.findIndex(match => match.includes(winnerId));
+		if (matchIndex === -1) return;
+		
+		let match = bracket[matchIndex];
+		let loser = match.find(p => p !== winnerId);
+		
+		// Met à jour le bracket
+		bracket[matchIndex] = [winnerId, "AUTO_WIN"];
+		
+		await interaction.reply({
+			content: `Victoire enregistrée pour <@${winnerId}>`,
+			flags: 64
+		});
+		
+		// Vérifie si tous les matchs du round sont terminés
+		let allDone = bracket.every(match => match[1] === "AUTO_WIN");
+		if (allDone) {
+			currentRound++;
+			displayTournament(interaction.channel, bracket);
+		}
+	} catch (error) {
+		console.error("Error handling button interaction:", error);
+		try {
+			await interaction.reply({
+				content: "YOU trying TO BREAK DA BOT?!",
+				flags: 64
+			});
+		} catch (_) {
+			// Silently ignore any fallback error
+		}
+	}
+});
+		
 const express = require("express");
 const app = express();
 
